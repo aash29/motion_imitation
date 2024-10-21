@@ -37,20 +37,7 @@ from motion_imitation.envs import locomotion_gym_config
 
 NUM_MOTORS = 12
 NUM_LEGS = 4
-MOTOR_NAMES = [
-    "FR_hip_joint",
-    "FR_upper_joint",
-    "FR_lower_joint",
-    "FL_hip_joint",
-    "FL_upper_joint",
-    "FL_lower_joint",
-    "RR_hip_joint",
-    "RR_upper_joint",
-    "RR_lower_joint",
-    "RL_hip_joint",
-    "RL_upper_joint",
-    "RL_lower_joint",
-]
+
 JOINT_DIRECTIONS = np.ones(12)
 HIP_JOINT_OFFSET = 0.0
 UPPER_LEG_JOINT_OFFSET = 0.0
