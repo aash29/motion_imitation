@@ -23,7 +23,7 @@ import numpy as np
 from motion_imitation.envs import locomotion_gym_config, locomotion_gym_env
 from motion_imitation.envs.env_wrappers import observation_dictionary_to_array_wrapper, simple_openloop, simple_forward_task, trajectory_generator_wrapper_env, rma_task
 from motion_imitation.envs.sensors import robot_sensors
-from motion_imitation.robots import a1, a1_robot, go1
+from motion_imitation.robots import  go1_robot, go1, a1
 
 def build_env(enable_rendering=False,
               num_action_repeat=20,
@@ -44,7 +44,7 @@ def build_env(enable_rendering=False,
   robot_kwargs = {"self_collision_enabled": False}
 
   if use_real_robot:
-    robot_class = a1_robot.A1Robot
+    robot_class = go1_robot.go1Robot
   else:
     robot_class = go1.go1
 

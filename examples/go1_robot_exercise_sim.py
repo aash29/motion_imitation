@@ -25,7 +25,7 @@ from motion_imitation.robots import robot_config
 FREQ = 0.5
 
 flags.DEFINE_bool(
-    "real_robot", False, "Whether to control a real robot or simulated.")
+    "real_robot", True, "Whether to control a real robot or simulated.")
 FLAGS = flags.FLAGS
 
 
