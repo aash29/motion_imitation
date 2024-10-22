@@ -30,15 +30,23 @@ import re
 import multiprocessing
 import numpy as np
 import time
+import struct
 
 from motion_imitation.robots import laikago_pose_utils
 from motion_imitation.robots import go1
 from motion_imitation.robots import minitaur
 from motion_imitation.robots import robot_config
 from motion_imitation.envs import locomotion_gym_config
-from motion_imitation.ucl import unitreeConnection
+from motion_imitation import ucl
 
 #from robot_interface import RobotInterface  # pytype: disable=import-error
+
+from ucl.common import byte_print, decode_version, decode_sn, getVoltage, pretty_print_obj, lib_version
+from ucl.lowState import lowState
+from ucl.lowCmd import lowCmd
+from ucl.unitreeConnection import unitreeConnection, LOW_WIFI_DEFAULTS, LOW_WIRED_DEFAULTS
+from ucl.enums import GaitType, SpeedLevel, MotorModeLow
+from ucl.complex import motorCmd, motorCmdArray
 
 NUM_MOTORS = 12
 NUM_LEGS = 4
@@ -188,8 +196,20 @@ class go1Robot(go1.go1):
     self._last_reset_time = time.time()
 
     # Initiate UDP for robot state and actions
-    self._robot_interface = RobotInterface(0xff)
-    self._robot_interface.send_command(np.zeros(60, dtype=np.float32))
+    #self._robot_interface = RobotInterface(0xff)
+    #self._robot_interface.send_command(np.zeros(60, dtype=np.float32))
+    conn = unitreeConnection(LOW_WIRED_DEFAULTS)
+    conn.startRecv()
+    lcmd = lowCmd()
+    # lcmd.encrypt = True
+    lstate = lowState()
+    mCmdArr = motorCmdArray()
+    # Send empty command to tell the dog the receive port and initialize the connection
+    cmd_bytes = lcmd.buildCmd(debug=False)
+    conn.send(cmd_bytes)
+    data = conn.getData()
+
+    self._robot_interface = conn
     # Re-entrant lock to ensure one process commands the robot at a time.
     self._robot_command_lock = multiprocessing.RLock()
     self._pipe = None
@@ -214,8 +234,18 @@ class go1Robot(go1.go1):
     Synchronous ReceiveObservation is not supported in go1,
     so changging it to noop instead.
     """
-    
-    state = self._robot_interface.receive_observation()
+    data = self._robot_interface.getData()
+    lstate = lowState()
+    for paket in data:
+      lstate.parseData(paket)
+
+    #state = self._robot_interface.receive_observation()
+    state = lstate
+
+    self._raw_state = state
+    self._raw_state.footForce = np.array([0,0,0,0])
+    self._raw_state.footForceEst = np.array([0,0,0,0]) 
+    #state = self._robot_interface.receive_observation()
     self._raw_state = state
     # Convert quaternion from wxyz to xyzw, which is default for Pybullet.
     q = state.imu.quaternion
@@ -232,7 +262,7 @@ class go1Robot(go1.go1):
         [motor.temperature for motor in state.motorState[:12]])
     if self._init_complete:
       # self._SetRobotStateInSim(self._motor_angles, self._motor_velocities)
-      self._velocity_estimator.update(state.tick / 1000.)
+      self._velocity_estimator.update(struct.unpack('f',state.tick)[0] / 1000.)
       self._UpdatePosition()
 
   def _CheckMotorTemperatures(self):
@@ -257,7 +287,13 @@ class go1Robot(go1.go1):
   def GetTrueMotorAngles(self):
     # TODO
     # return self._motor_angles.copy()
-    state = self._robot_interface.receive_observation()
+    #state = self._robot_interface.receive_observation()
+    data = self._robot_interface.getData()
+    lstate = lowState()
+    for paket in data:
+      lstate.parseData(paket)
+    state = lstate
+
     return np.array([motor.q for motor in state.motorState[:12]])
 
   def GetMotorAngles(self):
@@ -285,6 +321,8 @@ class go1Robot(go1.go1):
     return self._velocity_estimator.estimated_velocity.copy()
 
   def GetFootContacts(self):
+
+    self._raw_state.footForce
     return np.array(self._raw_state.footForce) > 20
 
   def GetTimeSinceReset(self):
@@ -329,8 +367,20 @@ class go1Robot(go1.go1):
       raise ValueError('Unknown motor control mode for go1 robot: {}.'.format(
           motor_control_mode))
 
-    with self._robot_command_lock:
-      self._robot_interface.send_command(command)
+    mCmdArr = motorCmdArray()
+    mCmdArr.setMotorCmd('FR_0',  motorCmd(mode=MotorModeLow.Servo, q=motor_commands[0], dq = 0, Kp = MOTOR_KPS[0], Kd = MOTOR_KDS[0], tau = 0))
+    mCmdArr.setMotorCmd('FR_1',  motorCmd(mode=MotorModeLow.Servo, q=motor_commands[1], dq = 0, Kp = MOTOR_KPS[1], Kd = MOTOR_KDS[1], tau = 0.0))
+    mCmdArr.setMotorCmd('FR_2',  motorCmd(mode=MotorModeLow.Servo, q=motor_commands[2], dq = 0, Kp = MOTOR_KPS[2], Kd = MOTOR_KDS[2], tau = 0.0))
+
+
+    lcmd = lowCmd()
+    lcmd.motorCmd = mCmdArr
+
+    cmd_bytes = lcmd.buildCmd(debug=False)
+    self._robot_interface.send(cmd_bytes)
+
+    #with self._robot_command_lock:
+      #self._robot_interface.send_command(command)
 
   def _HoldPose(self, pose, pipe):
     """Continually sends position command `pose` until `pipe` has a message.
